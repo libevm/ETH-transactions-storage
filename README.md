@@ -8,6 +8,14 @@ Indexer is written in Python. It works as a service in background:
 - Stores all transactions in Postgres database
 - Provides data for API to get transactions by address with postgrest
 
+
+## Running
+
+```bash
+# Change the ETH_URL env var in docker-compose.yml before running
+docker compose up -d --build
+```
+
 ## Stored information
 
 All indexed transactions includes (database field names shown):
@@ -16,15 +24,10 @@ All indexed transactions includes (database field names shown):
 - `txfrom` sender's Ethereum address
 - `txto` recipient's Ethereum address
 - `value` stores amount of ETH transferred
-- `gas` indicates `gasUsed`
-- `gasprice` indicates `gasPrice`
 - `block` is a transaction's block number
 - `txhash` is a transaction's hash
-- `contract_to` indicates recipient's Ethereum address in case of contract
-- `contract_value` stores amount of ERC20 transaction in its tokens
+- `input` is the transaction's hash input
 - `status` tx status
-
-To reduce storage requirements, Indexer stores only token transfer ERC20 transaction, started with `0xa9059cbb` in raw tx input.
 
 An example:
 
@@ -33,13 +36,10 @@ An example:
   "time": 1576008898,
   "txfrom": "0x6B924750e56A674A2Ad01FBF09C7c9012f16f094",
   "txto": "0x1143E097e134F3407eF6B088672CCECE9A4f8CDD",
-  "gas": 21000,
-  "gasprice": 2500000000,
   "block": 9084957,
   "txhash": "0xcf56a031dfc89f5a3686cd441ea97ae96a66f5809a4c8c1b370485a04fb37e0e",
   "value": 1200000000000000,
-  "contract_to": "",
-  "contract_value": "",
+  "input": "0x",
   "status": true
 }
 ```
@@ -233,25 +233,10 @@ In the `docker-compose.yml` you find a configuration that show how this tool can
 
 # API request examples
 
-Get last 25 Ethereum transactions without ERC-20 transactions for address 0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98:
+Get last 25 Ethereum transactions without to transactions for address 0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98:
 
 ```
-curl -k -X GET "http://localhost:3000/ethtxs?and=(contract_to.eq.,or(txfrom.eq.0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98,txto.eq.0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98))&order=time.desc&limit=25"
-
-```
-
-Get last 25 ERC-20 transactions without Ethereum transactions for address 0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98:
-
-```
-curl -k -X GET "http://localhost:3000/ethtxs?and=(contract_to.neq.,or(txfrom.eq.0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98,txto.eq.0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98))&order=time.desc&limit=25"
-
-```
-
-Get last 25 transactions for both ERC-20 and Ethereum for address 0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98:
-
-```
-curl -k -X GET "http://localhost:3000/ethtxs?and=(or(txfrom.eq.0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98,txto.eq.0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98))&order=time.desc&limit=25"
-
+curl -k -X GET "http://localhost:3000/ethtxs?and=(txto.eq.0xFBb1b73C4f0BDa4f67dcA266ce6Ef42f520fBB98)&order=time.asc&limit=25"
 ```
 
 # License

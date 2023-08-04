@@ -40,9 +40,9 @@ services:
     build: .
     environment: 
       POSTGRES_URI: postgres://app_user:postgres!secret@db:5432/app_db
-      ETH_URL: http://geth:8545
+      ETH_URL: https://eth-mainnet.g.alchemy.com/v2/[API_KEY]
       START_BLOCK: 17840250
-      CONFIRMATIONS_BLOCK: 1
+      CONFIRMATIONS_BLOCK: 0
       PERIOD: 5
     networks:
       - default

@@ -125,29 +125,35 @@ def insertTxsFromBlock(block):
     blockid = block['number']
     time = block['timestamp']
 
+    transaction_receipts = [None for i in range(0, len(block.transactions))]
+
     async def handler():
         for result in asyncio.as_completed([asyncWeb3.eth.get_transaction_receipt(block.transactions[i]['hash']) for i in range(0, len(block.transactions))]):
             transReceipt = await result
             txNumber = transReceipt['transactionIndex']
-            trans = block.transactions[txNumber]
-            # Save also transaction status, should be null if pre byzantium blocks
-            status = bool(transReceipt['status'])
-            txhash = trans['hash'].hex()
-            value = trans['value']
-            inputinfo = trans['input'].hex()
-            fr = trans['from']
-            to = trans['to'] if 'to' in trans else None
-            # If contract is created, make sure
-            if to is None:
-                contractAddress = transReceipt['contractAddress']
-                if contractAddress is not None:
-                    to = contractAddress
-            cur.execute(
-                'INSERT INTO public.ethtxs(time, txfrom, txto, value, block, txhash, input, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
-                (time, fr, to, value, blockid, txhash, inputinfo, status)
-            )
+            transaction_receipts[txNumber] = transReceipt
 
     asyncio.run(handler())
+
+    for txNumber in range(0, len(block.transactions)):
+        trans = block.transactions[txNumber]
+        transReceipt = transaction_receipts[txNumber]
+        # Save also transaction status, should be null if pre byzantium blocks
+        status = bool(transReceipt['status'])
+        txhash = trans['hash'].hex()
+        value = trans['value']
+        inputinfo = trans['input'].hex()
+        fr = trans['from']
+        to = trans['to'] if 'to' in trans else None
+        # If contract is created, make sure
+        if to is None:
+            contractAddress = transReceipt['contractAddress']
+            if contractAddress is not None:
+                to = contractAddress
+        cur.execute(
+            'INSERT INTO public.ethtxs(time, txfrom, txto, value, block, txhash, input, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
+            (time, fr, to, value, blockid, txhash, inputinfo, status)
+        )
 
 
 # Fetch all of new (not in index) Ethereum blocks and add transactions to index
