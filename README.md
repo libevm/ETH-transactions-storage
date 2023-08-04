@@ -127,7 +127,7 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO api_user;
 
 `ethsync.py` is a script which makes Ethereum transaction index. It accepts the following env variables:
 
-- DB_NAME: Postgres database name. Example: `index`.
+- POSTGRES_URI: Postgres database name. Example: `index`.
 - ETH_URL: Ethereum node url to reach the node. Supports websocket, http and ipc. See examples in `ethsync.py`.
 - START_BLOCK: the first block to synchronize from. Default is 1.
 - CONFIRMATIONS_BLOCK: the number of blocks to leave out of the synch from the end. I.e., last block is current `blockNumber - CONFIRMATIONS_BLOCK`. Default is 0.
@@ -145,7 +145,7 @@ At first start, Indexer will store transactions starting from the block you set.
 Sample run string:
 
 ```
-DB_NAME=index ETH_URL=http://127.0.0.1:8545 START_BLOCK=14600000 LOG_FILE=/home/api_user/ETH-transactions-storage/ethsync.log python3 /home/api_user/ETH-transactions-storage/ethsync.py
+POSTGRES_URI=postgres://app_user:postgres!secret@db:5432/app_db ETH_URL=http://127.0.0.1:8545 START_BLOCK=14600000 LOG_FILE=/home/api_user/ETH-transactions-storage/ethsync.log python3 /home/api_user/ETH-transactions-storage/ethsync.py
 ```
 
 We recommend to run Indexer script `ethsync.py` as a background service to make sure it will be restarted in case of failure. See `ethsync.service` as an example. Copy it to /lib/systemd/system/ethsync.service, update according to your settings, then register a service:

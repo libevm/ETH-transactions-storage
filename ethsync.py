@@ -9,24 +9,26 @@
 # v2.1
 
 from os import environ
-from web3 import Web3
+from web3 import Web3, AsyncHTTPProvider, AsyncWeb3
 from web3.middleware import geth_poa_middleware
+from urllib.parse import urlparse
+
+import asyncio
 import psycopg2
 import time
-import sys
 import logging
-#from systemd.journal import JournalHandler
+# from systemd.journal import JournalHandler
 
 # Get env variables or set to default
-dbname = environ.get("DB_NAME")
+postgres_uri = environ.get("POSTGRES_URI")
 startBlock = environ.get("START_BLOCK") or "1"
 confirmationBlocks = environ.get("CONFIRMATIONS_BLOCK") or "0"
 nodeUrl = environ.get("ETH_URL")
 pollingPeriod = environ.get("PERIOD") or "20"
 logFile = environ.get("LOG_FILE")
 
-if dbname == None:
-    print('Add postgre database in env var DB_NAME')
+if postgres_uri == None:
+    print('Add postgre database in env var POSTGRES_URI')
     exit(2)
 
 if nodeUrl == None:
@@ -34,17 +36,17 @@ if nodeUrl == None:
     exit(2)
 
 # Connect to Ethereum node
-if nodeUrl.startswith("http"):
-    web3 = Web3(Web3.HTTPProvider(nodeUrl)) # "http://publicnode:8545"
-elif nodeUrl.startswith("ws"):
-    web3 = Web3(Web3.WebsocketProvider(nodeUrl)) # "ws://publicnode:8546"
-else:
-    web3 = Web3(Web3.IPCProvider(nodeUrl)) # "/home/geth/.ethereum/geth.ipc"
+if not nodeUrl.startswith("http"):
+    print('Only HTTP supported')
+    exit(1)
+
+web3 = Web3(Web3.HTTPProvider(nodeUrl))  # "http://publicnode:8545"
+asyncWeb3 = AsyncWeb3(AsyncHTTPProvider(nodeUrl))  # "http://publicnode:8545"
 
 web3.middleware_onion.inject(geth_poa_middleware, layer=0)
 
 # Start logger
-#logger = logging.getLogger("EthIndexerLog")
+# logger = logging.getLogger("EthIndexerLog")
 logger = logging.getLogger("eth-sync")
 logger.setLevel(logging.INFO)
 
@@ -58,25 +60,52 @@ lfh.setFormatter(formatter)
 logger.addHandler(lfh)
 
 # Systemd logger, if we want to user journalctl logs
-# Install systemd-python and 
+# Install systemd-python and
 # decomment "#from systemd.journal import JournalHandler" up
-#ljc = JournalHandler()
-#formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-#ljc.setFormatter(formatter)
-#logger.addHandler(ljc)
+# ljc = JournalHandler()
+# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# ljc.setFormatter(formatter)
+# logger.addHandler(ljc)
 
-try:
-    logger.info("Trying to connect to " + dbname + " database…")
-    conn = psycopg2.connect(database=dbname)
-    conn.autocommit = True
-    logger.info("Connected to the database")
-except:
+connected = False
+
+for i in range(10, 0, -1):
+    try:
+        logger.info("Trying to connect to " + postgres_uri + " database…")
+
+        result = urlparse(postgres_uri)
+        username = result.username
+        password = result.password
+        database = result.path[1:]
+        hostname = result.hostname
+        port = result.port
+
+        conn = psycopg2.connect(
+            database=database,
+            user=username,
+            password=password,
+            host=hostname,
+            port=port
+        )
+
+        conn.autocommit = True
+        logger.info("Connected to the database")
+        connected = True
+        break
+
+    except Exception as e:
+        logger.error("Error while connecting", str(e))
+        logger.error("Retrying to connect... attempts: " + str(i))
+        time.sleep(2)
+
+if not connected:
     logger.error("Unable to connect to database")
     exit(1)
 
 # Delete last block as it may be not imported in full
 cur = conn.cursor()
-cur.execute('DELETE FROM public.ethtxs WHERE block = (SELECT Max(block) from public.ethtxs)')
+cur.execute(
+    'DELETE FROM public.ethtxs WHERE block = (SELECT Max(block) from public.ethtxs)')
 cur.close()
 conn.close()
 
@@ -90,44 +119,54 @@ while web3.eth.syncing != False:
 logger.info("Ethereum node is synced.")
 
 # Adds all transactions from Ethereum block
+
+
 def insertTxsFromBlock(block):
     blockid = block['number']
     time = block['timestamp']
-    for txNumber in range(0, len(block.transactions)):
-        trans = block.transactions[txNumber]
-        transReceipt = web3.eth.getTransactionReceipt(trans['hash'])
-        # Save also transaction status, should be null if pre byzantium blocks
-        status = bool(transReceipt['status'])
-        txhash = trans['hash'].hex()
-        value = trans['value']
-        inputinfo = trans['input']
-        # Check if transaction is a contract transfer
-        if (value == 0 and not inputinfo.startswith('0xa9059cbb')):
-            continue
-        fr = trans['from']
-        to = trans['to']
-        gasprice = trans['gasPrice']
-        gas = transReceipt['gasUsed']
-        contract_to = ''
-        contract_value = ''
-        # Check if transaction is a contract transfer
-        if inputinfo.startswith('0xa9059cbb'):
-            contract_to = inputinfo[10:-64]
-            contract_value = inputinfo[74:]
-        # Correct contract transfer transaction represents '0x' + 4 bytes 'a9059cbb' + 32 bytes (64 chars) for contract address and 32 bytes for its value
-        # Some buggy txs can break up Indexer, so we'll filter it
-        if len(contract_to) > 128:
-            logger.info('Skipping ' + str(txhash) + ' tx. Incorrect contract_to length: ' + str(len(contract_to)))
-            contract_to = ''
-            contract_value = ''
-        cur.execute(
-            'INSERT INTO public.ethtxs(time, txfrom, txto, value, gas, gasprice, block, txhash, contract_to, contract_value, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
-            (time, fr, to, value, gas, gasprice, blockid, txhash, contract_to, contract_value, status))
+
+    async def handler():
+        for result in asyncio.as_completed([asyncWeb3.eth.get_transaction_receipt(block.transactions[i]['hash']) for i in range(0, len(block.transactions))]):
+            transReceipt = await result
+            txNumber = transReceipt['transactionIndex']
+            trans = block.transactions[txNumber]
+            # Save also transaction status, should be null if pre byzantium blocks
+            status = bool(transReceipt['status'])
+            txhash = trans['hash'].hex()
+            value = trans['value']
+            inputinfo = trans['input'].hex()
+            fr = trans['from']
+            to = trans['to'] if 'to' in trans else None
+            # If contract is created, make sure
+            if to is None:
+                contractAddress = transReceipt['contractAddress']
+                if contractAddress is not None:
+                    to = contractAddress
+            cur.execute(
+                'INSERT INTO public.ethtxs(time, txfrom, txto, value, block, txhash, input, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
+                (time, fr, to, value, blockid, txhash, inputinfo, status)
+            )
+
+    asyncio.run(handler())
+
 
 # Fetch all of new (not in index) Ethereum blocks and add transactions to index
 while True:
     try:
-        conn = psycopg2.connect(database=dbname)
+        result = urlparse(postgres_uri)
+        username = result.username
+        password = result.password
+        database = result.path[1:]
+        hostname = result.hostname
+        port = result.port
+
+        conn = psycopg2.connect(
+            database=database,
+            user=username,
+            password=password,
+            host=hostname,
+            port=port
+        )
         conn.autocommit = True
     except:
         logger.error("Unable to connect to database")
@@ -140,17 +179,20 @@ while True:
     if maxblockindb is None:
         maxblockindb = int(startBlock)
 
-    endblock = int(web3.eth.blockNumber) - int(confirmationBlocks)
+    endblock = int(web3.eth.block_number) - int(confirmationBlocks)
 
-    logger.info('Current best block in index: ' + str(maxblockindb) + '; in Ethereum chain: ' + str(endblock))
+    logger.info('Current best block in index: ' +
+                str(maxblockindb) + '; in Ethereum chain: ' + str(endblock))
 
     for blockHeight in range(maxblockindb + 1, endblock):
-        block = web3.eth.getBlock(blockHeight, True)
+        block = web3.eth.get_block(blockHeight, True)
         if len(block.transactions) > 0:
             insertTxsFromBlock(block)
-            logger.info('Block ' + str(blockHeight) + ' with ' + str(len(block.transactions)) + ' transactions is processed')
+            logger.info('Block ' + str(blockHeight) + ' with ' +
+                        str(len(block.transactions)) + ' transactions is processed')
         else:
-            logger.info('Block ' + str(blockHeight) + ' does not contain transactions')
+            logger.info('Block ' + str(blockHeight) +
+                        ' does not contain transactions')
     cur.close()
     conn.close()
     time.sleep(int(pollingPeriod))
