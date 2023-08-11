@@ -181,9 +181,16 @@ while True:
 
     cur.execute('SELECT Max(block) from public.ethtxs')
     maxblockindb = cur.fetchone()[0]
+
     # On first start, we index transactions from a block number you indicate
     if maxblockindb is None:
-        maxblockindb = int(startBlock)
+
+        if startBlock is None:
+            maxblockindb = web3.eth.get_block_number()
+
+        else:
+            maxblockindb = int(startBlock)
+
 
     endblock = int(web3.eth.block_number) - int(confirmationBlocks)
 
