@@ -21,7 +21,7 @@ import logging
 
 # Get env variables or set to default
 postgres_uri = environ.get("POSTGRES_URI")
-startBlock = environ.get("START_BLOCK") or "1"
+startBlock = environ.get("START_BLOCK")
 confirmationBlocks = environ.get("CONFIRMATIONS_BLOCK") or "0"
 nodeUrl = environ.get("ETH_URL")
 pollingPeriod = environ.get("PERIOD") or "20"
@@ -184,10 +184,8 @@ while True:
 
     # On first start, we index transactions from a block number you indicate
     if maxblockindb is None:
-
         if startBlock is None:
             maxblockindb = web3.eth.get_block_number()
-
         else:
             maxblockindb = int(startBlock)
 
