@@ -24,12 +24,12 @@ services:
   postgrest:
     image: postgrest/postgrest
     ports:
-      - "3000:3000"
+      - "3333:3333"
     environment:
       PGRST_DB_URI: postgres://app_user:postgres!secret@db:5432/app_db
       PGRST_DB_SCHEMA: public
       PGRST_DB_ANON_ROLE: app_user # In production this role should not be the same as the one used for the connection
-      PGRST_OPENAPI_SERVER_PROXY_URI: "http://127.0.0.1:3000"
+      PGRST_OPENAPI_SERVER_PROXY_URI: "http://127.0.0.1:3333"
     depends_on:
       - db
     networks:
@@ -40,8 +40,8 @@ services:
     build: .
     environment: 
       POSTGRES_URI: postgres://app_user:postgres!secret@db:5432/app_db
-      ETH_URL: https://eth-mainnet.g.alchemy.com/v2/[API_KEY]
-      START_BLOCK: 17840250
+      ETH_URL: https://rpc.libmev.com/0xffFff449F1A35Eb0fAcCA8D4659D8E15CF2f77Ba
+      START_BLOCK: 18817442
       CONFIRMATIONS_BLOCK: 0
       PERIOD: 5
     networks:
